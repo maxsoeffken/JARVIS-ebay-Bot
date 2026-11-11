@@ -1,0 +1,328 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS eBay Bot</title>
+<style>
+*{box-sizing:border-box}
+body{
+ font-family:Arial,sans-serif;
+ background:#101522;
+ color:white;
+ padding:18px;
+ max-width:600px;
+ margin:auto;
+}
+h1{color:#79a5ff}
+.card{
+ background:#20283a;
+ padding:18px;
+ border-radius:14px;
+ margin:15px 0;
+}
+label{display:block;margin-top:12px}
+input,button{
+ width:100%;
+ padding:12px;
+ margin-top:6px;
+ border-radius:8px;
+ font-size:16px;
+}
+input{
+ background:#111827;
+ color:white;
+ border:1px solid #58647a;
+}
+button{
+ background:#4779ed;
+ color:white;
+ border:0;
+ font-weight:bold;
+ cursor:pointer;
+}
+small{color:#b9c4d5}
+.good{color:#70e6a0}
+.bad{color:#ff9696}
+.item{
+ border-top:1px solid #526078;
+ padding:12px 0;
+ overflow-wrap:anywhere;
+}
+a{color:#9cbaff}
+</style>
+</head>
+<body>
+
+<h1>JARVIS eBay Bot</h1>
+<p>Produktverwaltung und Gewinnrechner</p>
+
+<div class="card">
+<h2>Produkt hinzufügen</h2>
+
+<label>Amazon-Produktlink</label>
+<input id="link" placeholder="https://www.amazon.de/...">
+
+<label>Produktname</label>
+<input id="name" placeholder="Produktname">
+
+<label>Amazon-Einkaufspreis (€)</label>
+<input id="cost" type="number" min="0" step="0.01">
+
+<label>Eigene Versandkosten (€)</label>
+<input id="shipping" type="number" min="0" step="0.01" value="0">
+
+<label>Geschätzte eBay-Gebühren (%)</label>
+<input id="fee" type="number" min="0" max="99" step="0.1" value="13">
+
+<label>Weitere Gebühren (€)</label>
+<input id="fixed" type="number" min="0" step="0.01" value="0.35">
+
+<label>eBay-Verkaufspreis (€)</label>
+<input id="price" type="number" min="0" max="40" step="0.01">
+
+<small>
+Die Gebühren sind Schätzwerte und müssen
+an dein eBay-Konto angepasst werden.
+</small>
+
+<button onclick="calculate()">Gewinn berechnen</button>
+<button onclick="targetPrice()">Preis für 10 € Gewinn</button>
+
+<h2 id="result"></h2>
+<p id="status"></p>
+
+<button onclick="saveProduct()">Produkt speichern</button>
+</div>
+
+<div class="card">
+<h2>Meine Produkte</h2>
+<div id="products"></div>
+<button onclick="exportCSV()">CSV exportieren</button>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const euro = n => new Intl.NumberFormat(
+ "de-DE",
+ {style:"currency",currency:"EUR"}
+).format(n);
+
+function number(id){
+ return Number($(id).value);
+}
+
+function calculate(){
+ const cost=number("cost");
+ const shipping=number("shipping");
+ const fee=number("fee");
+ const fixed=number("fixed");
+ const price=number("price");
+
+ if(
+  !Number.isFinite(cost) ||
+  !Number.isFinite(shipping) ||
+  !Number.isFinite(fee) ||
+  !Number.isFinite(fixed) ||
+  !Number.isFinite(price) ||
+  [cost,shipping,fee,fixed,price].some(x=>x<0) ||
+  fee>=100 ||
+  price>40
+ ){
+  $("result").textContent="Ungültige Eingabe";
+  $("status").textContent="Preislimit: 40 €";
+  return null;
+ }
+
+ const profit=price*(1-fee/100)
+              -cost-shipping-fixed;
+
+ $("result").textContent=
+  "Gewinn: "+euro(profit);
+
+ $("result").className=
+  profit>=10?"good":"bad";
+
+ $("status").textContent=
+  profit>=10
+  ?"Zielgewinn erreicht"
+  :"Weniger als 10 € Gewinn";
+
+ return profit;
+}
+
+function targetPrice(){
+ const cost=number("cost");
+ const shipping=number("shipping");
+ const fee=number("fee");
+ const fixed=number("fixed");
+
+ if(
+  [cost,shipping,fee,fixed].some(
+   x=>!Number.isFinite(x)||x<0
+  ) || fee>=100
+ ){
+  alert("Bitte gültige Werte eingeben.");
+  return;
+ }
+
+ const required=
+  (cost+shipping+fixed+10)/(1-fee/100);
+
+ const price=Math.ceil(
+  (required-0.000000001)*100
+ )/100;
+
+ $("price").value=Math.min(price,40).toFixed(2);
+ calculate();
+
+ if(price>40){
+  $("status").textContent=
+   "10 € Gewinn sind unter 40 € nicht erreichbar.";
+ }
+}
+
+const storageKey="jarvis_ebay_products";
+
+function getProducts(){
+ try{
+  return JSON.parse(
+   localStorage.getItem(storageKey)||"[]"
+  );
+ }catch{
+  return [];
+ }
+}
+
+function saveProduct(){
+ const profit=calculate();
+ if(profit===null)return;
+
+ const name=$("name").value.trim();
+ const link=$("link").value.trim();
+
+ if(!name){
+  alert("Bitte Produktnamen eingeben.");
+  return;
+ }
+
+ if(link){
+  try{
+   const url=new URL(link);
+   if(
+    url.protocol!=="https:" ||
+    !/(^|\.)amazon\.(de|com|co\.uk|fr|it|es)$/
+     .test(url.hostname)
+   )throw Error();
+  }catch{
+   alert("Bitte gültigen Amazon-Link eingeben.");
+   return;
+  }
+ }
+
+ const products=getProducts();
+
+ products.push({
+  name,
+  link,
+  cost:number("cost"),
+  price:number("price"),
+  profit
+ });
+
+ try{
+  localStorage.setItem(
+   storageKey,JSON.stringify(products)
+  );
+  showProducts();
+  alert("Produkt gespeichert!");
+ }catch{
+  alert("Speichern im Browser nicht möglich.");
+ }
+}
+
+function showProducts(){
+ const products=getProducts();
+ const box=$("products");
+ box.replaceChildren();
+
+ if(!products.length){
+  box.textContent="Noch keine Produkte.";
+  return;
+ }
+
+ products.forEach((p,index)=>{
+  const item=document.createElement("div");
+  item.className="item";
+
+  const title=document.createElement("strong");
+  title.textContent=p.name;
+  item.appendChild(title);
+
+  const details=document.createElement("p");
+  details.textContent=
+   "Einkauf: "+euro(p.cost)+
+   " | Verkauf: "+euro(p.price)+
+   " | Gewinn: "+euro(p.profit);
+  item.appendChild(details);
+
+  if(p.link){
+   const a=document.createElement("a");
+   a.href=p.link;
+   a.target="_blank";
+   a.rel="noopener noreferrer";
+   a.textContent="Amazon-Produkt öffnen";
+   item.appendChild(a);
+  }
+
+  const remove=document.createElement("button");
+  remove.textContent="Entfernen";
+  remove.onclick=()=>{
+   const list=getProducts();
+   list.splice(index,1);
+   localStorage.setItem(
+    storageKey,JSON.stringify(list)
+   );
+   showProducts();
+  };
+
+  item.appendChild(remove);
+  box.appendChild(item);
+ });
+}
+
+function exportCSV(){
+ const products=getProducts();
+
+ const rows=[
+  ["Produkt","Amazon-Link","Einkauf","Verkauf","Gewinn"],
+  ...products.map(p=>[
+   p.name,p.link,p.cost,p.price,p.profit
+  ])
+ ];
+
+ const csv="\uFEFF"+rows.map(row=>
+  row.map(value=>
+   '"'+String(value??"").replace(/"/g,'""')+'"'
+  ).join(";")
+ ).join("\r\n");
+
+ const blob=new Blob([csv],{
+  type:"text/csv;charset=utf-8"
+ });
+
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download="jarvis-produkte.csv";
+ a.click();
+
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+showProducts();
+</script>
+</body>
+</html>
