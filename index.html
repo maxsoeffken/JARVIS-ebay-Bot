@@ -342,6 +342,43 @@ ebayButton.onclick = openEbaySearch;
 
 document.querySelector("#result").after(ebayButton);
 
+function extractAmazonASIN(link) {
+  try {
+    const url = new URL(link.trim());
+    const host = url.hostname.toLowerCase();
+
+    if (!/(^|\.)amazon\.(de|com|co\.uk|fr|it|es)$/.test(host)) {
+      return null;
+    }
+
+    const match = url.pathname.match(
+      /\/(?:dp|gp\/product|gp\/aw\/d|exec\/obidos\/ASIN)\/([A-Z0-9]{10})(?:\/|$)/i
+    );
+
+    return match ? match[1].toUpperCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkAmazonLink() {
+  const link = document.getElementById("link").value;
+  const asin = extractAmazonASIN(link);
+
+  if (!asin) {
+    alert("Keine Amazon-Produktnummer erkannt. Bitte einen vollständigen Amazon-Produktlink verwenden.");
+    return;
+  }
+
+  alert("Amazon-Produkt erkannt!\nASIN: " + asin);
+}
+
+const amazonButton = document.createElement("button");
+amazonButton.textContent = "Amazon-Link auslesen";
+amazonButton.onclick = checkAmazonLink;
+
+document.getElementById("link").after(amazonButton);
+
 showProducts();
 </script>
 </body>
