@@ -361,17 +361,41 @@ function extractAmazonASIN(link) {
   }
 }
 
+
 function checkAmazonLink() {
-  const link = document.getElementById("link").value;
+  const link = document.getElementById("link").value.trim();
+
+  if (!link) {
+    alert("Bitte einen Amazon-Link eingeben.");
+    return;
+  }
+
+  let url;
+  try {
+    url = new URL(link);
+  } catch {
+    alert("Bitte einen gültigen Link eingeben.");
+    return;
+  }
+
+  const host = url.hostname.toLowerCase();
+
+  if (host === "amzn.eu" || host === "amzn.to") {
+    window.open(link, "_blank");
+    alert("Amazon wurde geöffnet. Kopiere dort die vollständige Produktadresse und füge sie hier ein.");
+    return;
+  }
+
   const asin = extractAmazonASIN(link);
 
   if (!asin) {
-    alert("Keine Amazon-Produktnummer erkannt. Bitte einen vollständigen Amazon-Produktlink verwenden.");
+    alert("Keine Amazon-Produktnummer erkannt.");
     return;
   }
 
   alert("Amazon-Produkt erkannt!\nASIN: " + asin);
 }
+
 
 const amazonButton = document.createElement("button");
 amazonButton.textContent = "Amazon-Link auslesen";
