@@ -1,23 +1,45 @@
 
-from datetime import datetime, timezone
+import csv
+from pathlib import Path
 
-MAX_VERKAUFSPREIS = 40.00
+MAX_PREIS = 40.00
 MIN_GEWINN = 10.00
-MAX_PRODUKTE_PRO_TAG = 100
+MAX_PRODUKTE = 100
+ZIEL_BESTAND = 4
 
-def gewinn_berechnen(einkauf, verkauf, versand=0):
+def pruefen(produkt):
+    einkauf = float(produkt["einkauf"])
+    verkauf = float(produkt["verkauf"])
+    versand = float(produkt["versand"])
+
+    # Vorläufige Gebührenannahme, keine verbindliche eBay-Gebühr
     gebuehren = verkauf * 0.13 + 0.35
-    return round(verkauf - einkauf - versand - gebuehren, 2)
+    gewinn = round(
+        verkauf - einkauf - versand - gebuehren, 2
+    )
 
-def produkt_pruefen(einkauf, verkauf, versand=0):
-    gewinn = gewinn_berechnen(einkauf, verkauf, versand)
-    return verkauf <= MAX_VERKAUFSPREIS and gewinn >= MIN_GEWINN
+    return gewinn >= MIN_GEWINN and verkauf <= MAX_PREIS, gewinn
 
-print("JARVIS gestartet")
-print("Zeit:", datetime.now(timezone.utc).isoformat())
-print("Maximaler Verkaufspreis:", MAX_VERKAUFSPREIS, "EUR")
-print("Mindestgewinn:", MIN_GEWINN, "EUR")
-print("Produktlimit:", MAX_PRODUKTE_PRO_TAG)
+datei = Path("produkte.csv")
 
-print("Test:", produkt_pruefen(15, 30))
-print("Automatische Produktsuche noch nicht verbunden.")
+if not datei.exists():
+    print("Bitte zuerst produkte.csv anlegen.")
+else:
+    with datei.open(encoding="utf-8-sig", newline="") as f:
+        produkte = list(csv.DictReader(f))
+
+    gefunden = 0
+
+    for produkt in produkte:
+        geeignet, gewinn = pruefen(produkt)
+
+        if geeignet and gefunden < MAX_PRODUKTE:
+            gefunden += 1
+            print(
+                f"{produkt['name']} | "
+                f"Gewinn: {gewinn:.2f} EUR | "
+                f"Zielbestand: {ZIEL_BESTAND}"
+            )
+
+    print(f"Geeignete Produkte: {gefunden}")
+    print("Keine Angebote automatisch veröffentlicht.")
