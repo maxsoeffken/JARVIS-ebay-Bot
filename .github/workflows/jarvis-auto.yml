@@ -1,0 +1,19 @@
+
+name: JARVIS Automatik
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8,12,16,20 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  jarvis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: JARVIS starten
+        run: |
+          echo "JARVIS wurde gestartet."
+          echo "Automatische Produktsuche wird als Nächstes eingerichtet."
