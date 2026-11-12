@@ -12,6 +12,7 @@ permissions:
 jobs:
   jarvis:
     runs-on: ubuntu-latest
+
     steps:
       - name: Repository laden
         uses: actions/checkout@v4
@@ -21,5 +22,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Produktsuche starten
+      - name: Produktkandidaten berechnen
         run: python jarvis.py
+
+      - name: Kandidatenliste speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-produktkandidaten
+          path: kandidaten.csv
+          if-no-files-found: error
+          retention-days: 7
