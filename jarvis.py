@@ -26,7 +26,9 @@ if not datei.exists():
     print("Bitte zuerst produkte.csv anlegen.")
 else:
     with datei.open(encoding="utf-8-sig", newline="") as f:
-        produkte = list(csv.DictReader(f))
+        reader = csv.DictReader(f, skipinitialspace=True)
+        print("Erkannte Spalten:", reader.fieldnames)
+        produkte = list(reader)
 
     gefunden = 0
 
