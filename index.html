@@ -322,6 +322,26 @@ function exportCSV(){
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
+function openEbaySearch() {
+  const name = document.getElementById("name").value.trim();
+
+  if (!name) {
+    alert("Bitte zuerst einen Produktnamen eingeben.");
+    return;
+  }
+
+  const url = "https://www.ebay.de/sch/i.html?_nkw=" +
+    encodeURIComponent(name);
+
+  window.open(url, "_blank");
+}
+
+const ebayButton = document.createElement("button");
+ebayButton.textContent = "Produkt bei eBay suchen";
+ebayButton.onclick = openEbaySearch;
+
+document.querySelector("#result").after(ebayButton);
+
 showProducts();
 </script>
 </body>
