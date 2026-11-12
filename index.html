@@ -67,6 +67,15 @@ a{color:#9cbaff}
 <label>Produktname</label>
 <input id="name" placeholder="Produktname">
 <p id="amazonStatus"></p>
+
+
+<label>Amazon-Produktdaten einfügen</label>
+<textarea id="amazonText" rows="4"
+placeholder="Produktname und Preis von Amazon hier einfügen"></textarea>
+<button type="button" onclick="importAmazonText()">
+  Produktdaten übernehmen
+</button>
+
 <label>Amazon-Einkaufspreis (€)</label>
 <input id="cost" type="number" min="0" step="0.01">
 
@@ -409,6 +418,37 @@ amazonButton.textContent = "Amazon-Link auslesen";
 amazonButton.onclick = checkAmazonLink;
 
 document.getElementById("link").after(amazonButton);
+
+function importAmazonText() {
+  const text = document.getElementById("amazonText").value.trim();
+
+  if (!text) {
+    alert("Bitte zuerst Produktname und Preis von Amazon einfügen.");
+    return;
+  }
+
+  const lines = text.split("\n").map(x => x.trim()).filter(Boolean);
+  const priceMatch = text.match(/(\d{1,5}(?:[.,]\d{2}))\s*€/);
+
+  if (!priceMatch) {
+    alert("Keinen Preis erkannt. Bitte Preis manuell eingeben.");
+  } else {
+    document.getElementById("cost").value =
+      priceMatch[1].replace(",", ".");
+  }
+
+  const name = lines.find(line =>
+    line.length > 8 &&
+    !line.includes("€") &&
+    !/prime|lieferung|bewertung|sterne/i.test(line)
+  );
+
+  if (name) {
+    document.getElementById("name").value = name;
+  }
+
+  alert("Produktdaten übernommen. Bitte Angaben überprüfen.");
+}
 
 showProducts();
 </script>
