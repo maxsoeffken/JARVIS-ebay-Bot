@@ -1,19 +1,27 @@
 
 import csv
 from pathlib import Path
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 MAX_PREIS = Decimal("40.00")
 MIN_GEWINN = Decimal("10.00")
 MAX_PRODUKTE = 100
-ZIELMENGE = 4
+MIN_STUECKZAHL = 4
+MAX_ALTER_STUNDEN = 6
 
-# Geschätzte Gebühren, später durch echte Werte ersetzen
-GEBUEHREN_SATZ = Decimal("0.13")
-GEBUEHREN_FIX = Decimal("0.35")
+# Nur geschätzte Gebühren
+GEBUEHREN = Decimal("0.13")
+FIXGEBUEHR = Decimal("0.35")
 
 QUELLE = Path("produkte.csv")
 AUSGABE = Path("kandidaten.csv")
+
+FELDER = [
+    "name", "einkauf", "verkauf", "versand",
+    "amazon_link", "prime_lieferdatum",
+    "stueckzahl", "geprueft_am"
+]
 
 
 def geld(wert):
@@ -21,118 +29,103 @@ def geld(wert):
 
 
 def main():
-    print("JARVIS gestartet")
+    print("JARVIS Prime-Prüfung gestartet")
 
     if not QUELLE.exists():
-        print("Fehler: produkte.csv fehlt.")
+        print("FEHLER: produkte.csv fehlt")
         return
 
-    with QUELLE.open(
-        encoding="utf-8-sig",
-        newline=""
-    ) as datei:
-        zeilen = [
-            zeile for zeile in datei
-            if zeile.strip()
-        ]
+    with QUELLE.open(encoding="utf-8-sig", newline="") as f:
+        zeilen = [z for z in f if z.strip()]
 
     if not zeilen:
-        print("Keine Produkte vorhanden.")
+        print("Keine Produktdaten vorhanden")
         return
 
-    reader = csv.DictReader(
-        zeilen,
-        skipinitialspace=True
-    )
+    reader = csv.DictReader(zeilen, skipinitialspace=True)
+    spalten = [s.strip() for s in (reader.fieldnames or [])]
 
-    benoetigt = {
-        "name", "einkauf", "verkauf",
-        "versand", "amazon_link"
-    }
-
-    spalten = {
-        name.strip()
-        for name in (reader.fieldnames or [])
-    }
-
-    if not benoetigt.issubset(spalten):
-        print("Fehlende Spalten:", benoetigt - spalten)
+    if not set(FELDER).issubset(spalten):
+        print("FEHLER: Fehlende Spalten")
+        print(set(FELDER) - set(spalten))
         return
 
+    jetzt = datetime.now().astimezone()
+    morgen = jetzt.date() + timedelta(days=1)
     kandidaten = []
 
-    for produkt in reader:
+    for zeile in reader:
         try:
-            name = produkt["name"].strip()
-            einkauf = geld(produkt["einkauf"])
-            verkauf = geld(produkt["verkauf"])
-            versand = geld(produkt["versand"])
-            link = produkt["amazon_link"].strip()
+            p = {
+                str(k).strip(): (v or "").strip()
+                for k, v in zeile.items()
+                if k is not None
+            }
 
-            if not name or min(
-                einkauf, verkauf, versand
-            ) < 0:
+            if not p["amazon_link"].startswith(
+                ("https://www.amazon.de/", "https://amazon.de/")
+            ):
                 continue
 
-            gebuehren = (
-                verkauf * GEBUEHREN_SATZ
-                + GEBUEHREN_FIX
+            lieferdatum = datetime.strptime(
+                p["prime_lieferdatum"], "%Y-%m-%d"
+            ).date()
+
+            pruefzeit = datetime.fromisoformat(
+                p["geprueft_am"]
             )
 
+            if pruefzeit.tzinfo is None:
+                print("Prüfzeit ohne Zeitzone übersprungen")
+                continue
+
+            alter = jetzt - pruefzeit
+
+            if not (
+                timedelta(0) <= alter <= timedelta(hours=MAX_ALTER_STUNDEN)
+                and jetzt.date() <= lieferdatum <= morgen
+                and int(p["stueckzahl"]) >= MIN_STUECKZAHL
+            ):
+                continue
+
+            einkauf = geld(p["einkauf"])
+            verkauf = geld(p["verkauf"])
+            versand = geld(p["versand"])
+
+            if min(einkauf, verkauf, versand) < 0:
+                continue
+
             gewinn = (
-                verkauf - einkauf
-                - versand - gebuehren
+                verkauf - einkauf - versand
+                - verkauf * GEBUEHREN - FIXGEBUEHR
             ).quantize(Decimal("0.01"))
 
-            if (
-                verkauf <= MAX_PREIS
-                and gewinn >= MIN_GEWINN
-            ):
+            if verkauf <= MAX_PREIS and gewinn >= MIN_GEWINN:
                 kandidaten.append({
-                    "name": name,
-                    "einkauf": str(einkauf),
-                    "verkauf": str(verkauf),
-                    "versand": str(versand),
+                    **p,
                     "gewinn": str(gewinn),
-                    "amazon_link": link,
-                    "zielmenge": ZIELMENGE,
-                    "status": "Pruefung erforderlich"
+                    "status": "Manuelle Freigabe erforderlich"
                 })
 
             if len(kandidaten) >= MAX_PRODUKTE:
                 break
 
         except (
-            ValueError, InvalidOperation,
-            KeyError, AttributeError
+            ValueError, KeyError, InvalidOperation,
+            OverflowError
         ) as fehler:
             print("Produkt übersprungen:", fehler)
 
-    felder = [
-        "name", "einkauf", "verkauf",
-        "versand", "gewinn", "amazon_link",
-        "zielmenge", "status"
-    ]
-
-    with AUSGABE.open(
-        "w", encoding="utf-8", newline=""
-    ) as datei:
+    with AUSGABE.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
-            datei, fieldnames=felder
+            f, fieldnames=FELDER + ["gewinn", "status"]
         )
         writer.writeheader()
         writer.writerows(kandidaten)
 
     print("Geeignete Kandidaten:", len(kandidaten))
-    for produkt in kandidaten:
-        print(
-            produkt["name"],
-            "| Gewinn:", produkt["gewinn"],
-            "EUR | Amazon:", produkt["amazon_link"] or "kein Link"
-        )
-
-    print("Datei erstellt:", AUSGABE)
-    print("Noch keine eBay-Angebote veröffentlicht.")
+    print("Ergebnisdatei:", AUSGABE)
+    print("Keine eBay-Angebote veröffentlicht.")
 
 
 if __name__ == "__main__":
