@@ -1,5 +1,2 @@
 
-name,einkauf,verkauf,versand,amazon_link
-Testprodukt 1,15.00,30.00,3.00,
-Testprodukt 2,10.00,29.99,3.00,
-Testprodukt 3,25.00,39.99,4.00,
+name,einkauf,verkauf,versand,amazon_link,prime_lieferdatum,stueckzahl,geprueft_am
