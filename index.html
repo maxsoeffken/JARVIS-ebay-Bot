@@ -3,14 +3,14 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>JARVIS eBay Bot</title>
 <style>
 *{box-sizing:border-box}
 body{
  font-family:Arial,sans-serif;
  background:#101522;
- color:white;
+ color:#fff;
  padding:18px;
  max-width:600px;
  margin:auto;
@@ -23,14 +23,14 @@ h1{color:#79a5ff}
  margin:15px 0;
 }
 label{display:block;margin-top:12px}
-input,button{
+input,textarea,button{
  width:100%;
  padding:12px;
  margin-top:6px;
  border-radius:8px;
  font-size:16px;
 }
-input{
+input,textarea{
  background:#111827;
  color:white;
  border:1px solid #58647a;
@@ -59,241 +59,276 @@ a{color:#9cbaff}
 <p>Produktverwaltung und Gewinnrechner</p>
 
 <div class="card">
+<h2>eBay-Verbindung</h2>
+<p class="bad">Noch nicht mit der eBay-API verbunden</p>
+<small>
+Die OAuth-Anmeldung im Developer Portal wurde eingerichtet.
+Für automatisches Einstellen und die sichere Token-Erneuerung
+fehlt noch ein geschütztes Backend.
+Keine geheimen Schlüssel oder Tokens in diese Webseite eintragen.
+</small>
+</div>
+
+<div class="card">
 <h2>Produkt hinzufügen</h2>
 
-<label>Amazon-Produktlink</label>
+<label for="link">Amazon-Produktlink</label>
 <input id="link" placeholder="https://www.amazon.de/...">
-
-<label>Produktname</label>
-<input id="name" placeholder="Produktname">
+<button type="button" onclick="checkAmazonLink()">
+Amazon-Link prüfen
+</button>
 <p id="amazonStatus"></p>
 
+<label for="name">Produktname</label>
+<input id="name" placeholder="Produktname">
 
-<label>Amazon-Produktdaten einfügen</label>
+<label for="amazonText">Amazon-Produktdaten einfügen</label>
 <textarea id="amazonText" rows="4"
 placeholder="Produktname und Preis von Amazon hier einfügen"></textarea>
 <button type="button" onclick="importAmazonText()">
-  Produktdaten übernehmen
+Produktdaten übernehmen
 </button>
 
-<label>Amazon-Einkaufspreis (€)</label>
+<label for="cost">Amazon-Einkaufspreis (€)</label>
 <input id="cost" type="number" min="0" step="0.01">
 
-<label>Eigene Versandkosten (€)</label>
+<label for="shipping">Eigene Versandkosten (€)</label>
 <input id="shipping" type="number" min="0" step="0.01" value="0">
 
-<label>Geschätzte eBay-Gebühren (%)</label>
+<label for="fee">Geschätzte eBay-Gebühren (%)</label>
 <input id="fee" type="number" min="0" max="99" step="0.1" value="13">
 
-<label>Weitere Gebühren (€)</label>
+<label for="fixed">Weitere Gebühren (€)</label>
 <input id="fixed" type="number" min="0" step="0.01" value="0.35">
 
-<label>eBay-Verkaufspreis (€)</label>
+<label for="price">eBay-Verkaufspreis (€)</label>
 <input id="price" type="number" min="0" max="40" step="0.01">
 
 <small>
-Die Gebühren sind Schätzwerte und müssen
-an dein eBay-Konto angepasst werden.
+Die Gebühren sind Schätzwerte. Prüfe die tatsächlichen Gebühren
+deines eBay-Kontos. Verkaufspreis maximal 40 €.
 </small>
 
-<button onclick="calculate()">Gewinn berechnen</button>
-<button onclick="targetPrice()">Preis für 10 € Gewinn</button>
+<button type="button" onclick="calculate()">
+Gewinn berechnen
+</button>
+<button type="button" onclick="targetPrice()">
+Preis für 10 € Gewinn
+</button>
 
 <h2 id="result"></h2>
 <p id="status"></p>
 
-<button onclick="saveProduct()">Produkt speichern</button>
+<button type="button" onclick="openEbaySearch()">
+Produkt bei eBay suchen
+</button>
+<button type="button" onclick="saveProduct()">
+Produkt speichern
+</button>
 </div>
 
 <div class="card">
 <h2>Meine Produkte</h2>
 <div id="products"></div>
-<button onclick="exportCSV()">CSV exportieren</button>
+<button type="button" onclick="exportCSV()">
+CSV exportieren
+</button>
 </div>
 
 <script>
+'use strict';
+
 const $ = id => document.getElementById(id);
 
 const euro = n => new Intl.NumberFormat(
- "de-DE",
- {style:"currency",currency:"EUR"}
+ 'de-DE',
+ {style:'currency',currency:'EUR'}
 ).format(n);
 
-function number(id){
- return Number($(id).value);
+const number = id =>
+ $(id).value.trim() === ''
+ ? NaN
+ : Number($(id).value);
+
+const storageKey = 'jarvis_ebay_products';
+
+function inputs(withPrice = true) {
+ const ids = [
+  'cost','shipping','fee','fixed',
+  ...(withPrice ? ['price'] : [])
+ ];
+
+ const values = ids.map(number);
+
+ return values.every(n =>
+  Number.isFinite(n) && n >= 0
+ ) &&
+ number('fee') < 100 &&
+ (!withPrice || number('price') <= 40);
 }
 
-function calculate(){
- const cost=number("cost");
- const shipping=number("shipping");
- const fee=number("fee");
- const fixed=number("fixed");
- const price=number("price");
-
- if(
-  !Number.isFinite(cost) ||
-  !Number.isFinite(shipping) ||
-  !Number.isFinite(fee) ||
-  !Number.isFinite(fixed) ||
-  !Number.isFinite(price) ||
-  [cost,shipping,fee,fixed,price].some(x=>x<0) ||
-  fee>=100 ||
-  price>40
- ){
-  $("result").textContent="Ungültige Eingabe";
-  $("status").textContent="Preislimit: 40 €";
+function calculate() {
+ if (!inputs()) {
+  $('result').textContent =
+   'Ungültige oder fehlende Eingabe';
+  $('result').className = 'bad';
+  $('status').textContent =
+   'Bitte alle Preise eingeben. Verkaufspreis maximal 40 €.';
   return null;
  }
 
- const profit=price*(1-fee/100)
-              -cost-shipping-fixed;
+ const profit =
+  number('price') * (1 - number('fee') / 100)
+  - number('cost')
+  - number('shipping')
+  - number('fixed');
 
- $("result").textContent=
-  "Gewinn: "+euro(profit);
+ $('result').textContent = 'Gewinn: ' + euro(profit);
+ $('result').className = profit >= 10 ? 'good' : 'bad';
 
- $("result").className=
-  profit>=10?"good":"bad";
-
- $("status").textContent=
-  profit>=10
-  ?"Zielgewinn erreicht"
-  :"Weniger als 10 € Gewinn";
+ $('status').textContent =
+  profit >= 10
+  ? 'Zielgewinn erreicht'
+  : 'Weniger als 10 € Gewinn';
 
  return profit;
 }
 
-function targetPrice(){
- const cost=number("cost");
- const shipping=number("shipping");
- const fee=number("fee");
- const fixed=number("fixed");
-
- if(
-  [cost,shipping,fee,fixed].some(
-   x=>!Number.isFinite(x)||x<0
-  ) || fee>=100
- ){
-  alert("Bitte gültige Werte eingeben.");
+function targetPrice() {
+ if (!inputs(false)) {
+  alert('Bitte gültige Werte eingeben.');
   return;
  }
 
- const required=
-  (cost+shipping+fixed+10)/(1-fee/100);
+ const required =
+  (number('cost') +
+   number('shipping') +
+   number('fixed') + 10)
+  / (1 - number('fee') / 100);
 
- const price=Math.ceil(
-  (required-0.000000001)*100
- )/100;
+ const price =
+  Math.ceil((required - 0.000000001) * 100) / 100;
 
- $("price").value=Math.min(price,40).toFixed(2);
+ $('price').value = Math.min(price, 40).toFixed(2);
+
  calculate();
 
- if(price>40){
-  $("status").textContent=
-   "10 € Gewinn sind unter 40 € nicht erreichbar.";
+ if (price > 40) {
+  $('status').textContent =
+   '10 € Gewinn sind unter 40 € nicht erreichbar.';
  }
 }
 
-const storageKey="jarvis_ebay_products";
-
-function getProducts(){
- try{
-  return JSON.parse(
-   localStorage.getItem(storageKey)||"[]"
+function getProducts() {
+ try {
+  const data = JSON.parse(
+   localStorage.getItem(storageKey) || '[]'
   );
- }catch{
+  return Array.isArray(data) ? data : [];
+ } catch {
   return [];
  }
 }
 
-function saveProduct(){
- const profit=calculate();
- if(profit===null)return;
+function amazonUrl(link) {
+ try {
+  const u = new URL(link);
 
- const name=$("name").value.trim();
- const link=$("link").value.trim();
+  return u.protocol === 'https:' &&
+   /(^|\.)amazon\.(de|com|co\.uk|fr|it|es)$/
+   .test(u.hostname.toLowerCase());
+ } catch {
+  return false;
+ }
+}
 
- if(!name){
-  alert("Bitte Produktnamen eingeben.");
+function saveProduct() {
+ const profit = calculate();
+ if (profit === null) return;
+
+ const name = $('name').value.trim();
+ const link = $('link').value.trim();
+
+ if (!name) {
+  alert('Bitte Produktnamen eingeben.');
   return;
  }
 
- if(link){
-  try{
-   const url=new URL(link);
-   if(
-    url.protocol!=="https:" ||
-    !/(^|\.)amazon\.(de|com|co\.uk|fr|it|es)$/
-     .test(url.hostname)
-   )throw Error();
-  }catch{
-   alert("Bitte gültigen Amazon-Link eingeben.");
-   return;
-  }
+ if (link && !amazonUrl(link)) {
+  alert('Bitte gültigen vollständigen Amazon-Link eingeben.');
+  return;
  }
 
- const products=getProducts();
+ const products = getProducts();
 
  products.push({
   name,
   link,
-  cost:number("cost"),
-  price:number("price"),
+  cost: number('cost'),
+  price: number('price'),
   profit
  });
 
- try{
+ try {
   localStorage.setItem(
-   storageKey,JSON.stringify(products)
+   storageKey,
+   JSON.stringify(products)
   );
   showProducts();
-  alert("Produkt gespeichert!");
- }catch{
-  alert("Speichern im Browser nicht möglich.");
+  alert('Produkt gespeichert!');
+ } catch {
+  alert('Speichern im Browser nicht möglich.');
  }
 }
 
-function showProducts(){
- const products=getProducts();
- const box=$("products");
+function showProducts() {
+ const products = getProducts();
+ const box = $('products');
+
  box.replaceChildren();
 
- if(!products.length){
-  box.textContent="Noch keine Produkte.";
+ if (!products.length) {
+  box.textContent = 'Noch keine Produkte.';
   return;
  }
 
- products.forEach((p,index)=>{
-  const item=document.createElement("div");
-  item.className="item";
+ products.forEach((p, index) => {
+  const item = document.createElement('div');
+  item.className = 'item';
 
-  const title=document.createElement("strong");
-  title.textContent=p.name;
+  const title = document.createElement('strong');
+  title.textContent = p.name;
   item.appendChild(title);
 
-  const details=document.createElement("p");
-  details.textContent=
-   "Einkauf: "+euro(p.cost)+
-   " | Verkauf: "+euro(p.price)+
-   " | Gewinn: "+euro(p.profit);
+  const details = document.createElement('p');
+  details.textContent =
+   'Einkauf: ' + euro(p.cost) +
+   ' | Verkauf: ' + euro(p.price) +
+   ' | Gewinn: ' + euro(p.profit);
+
   item.appendChild(details);
 
-  if(p.link){
-   const a=document.createElement("a");
-   a.href=p.link;
-   a.target="_blank";
-   a.rel="noopener noreferrer";
-   a.textContent="Amazon-Produkt öffnen";
+  if (p.link) {
+   const a = document.createElement('a');
+   a.href = p.link;
+   a.target = '_blank';
+   a.rel = 'noopener noreferrer';
+   a.textContent = 'Amazon-Produkt öffnen';
    item.appendChild(a);
   }
 
-  const remove=document.createElement("button");
-  remove.textContent="Entfernen";
-  remove.onclick=()=>{
-   const list=getProducts();
-   list.splice(index,1);
+  const remove = document.createElement('button');
+  remove.textContent = 'Entfernen';
+
+  remove.onclick = () => {
+   const list = getProducts();
+   list.splice(index, 1);
+
    localStorage.setItem(
-    storageKey,JSON.stringify(list)
+    storageKey,
+    JSON.stringify(list)
    );
+
    showProducts();
   };
 
@@ -302,152 +337,137 @@ function showProducts(){
  });
 }
 
-function exportCSV(){
- const products=getProducts();
-
- const rows=[
-  ["Produkt","Amazon-Link","Einkauf","Verkauf","Gewinn"],
-  ...products.map(p=>[
+function exportCSV() {
+ const rows = [
+  ['Produkt','Amazon-Link','Einkauf','Verkauf','Gewinn'],
+  ...getProducts().map(p => [
    p.name,p.link,p.cost,p.price,p.profit
   ])
  ];
 
- const csv="\uFEFF"+rows.map(row=>
-  row.map(value=>
-   '"'+String(value??"").replace(/"/g,'""')+'"'
-  ).join(";")
- ).join("\r\n");
+ const csv = '\uFEFF' + rows.map(row =>
+  row.map(value =>
+   '"' + String(value ?? '').replace(/"/g,'""') + '"'
+  ).join(';')
+ ).join('\r\n');
 
- const blob=new Blob([csv],{
-  type:"text/csv;charset=utf-8"
+ const blob = new Blob([csv], {
+  type:'text/csv;charset=utf-8'
  });
 
- const url=URL.createObjectURL(blob);
- const a=document.createElement("a");
- a.href=url;
- a.download="jarvis-produkte.csv";
+ const url = URL.createObjectURL(blob);
+ const a = document.createElement('a');
+
+ a.href = url;
+ a.download = 'jarvis-produkte.csv';
  a.click();
 
- setTimeout(()=>URL.revokeObjectURL(url),1000);
+ setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function openEbaySearch() {
-  const name = document.getElementById("name").value.trim();
+ const name = $('name').value.trim();
 
-  if (!name) {
-    alert("Bitte zuerst einen Produktnamen eingeben.");
-    return;
-  }
+ if (!name) {
+  alert('Bitte zuerst einen Produktnamen eingeben.');
+  return;
+ }
 
-  const url = "https://www.ebay.de/sch/i.html?_nkw=" +
-    encodeURIComponent(name);
-
-  window.open(url, "_blank");
+ window.open(
+  'https://www.ebay.de/sch/i.html?_nkw=' +
+  encodeURIComponent(name),
+  '_blank',
+  'noopener'
+ );
 }
-
-const ebayButton = document.createElement("button");
-ebayButton.textContent = "Produkt bei eBay suchen";
-ebayButton.onclick = openEbaySearch;
-
-document.querySelector("#result").after(ebayButton);
 
 function extractAmazonASIN(link) {
-  try {
-    const url = new URL(link.trim());
-    const host = url.hostname.toLowerCase();
+ if (!amazonUrl(link)) return null;
 
-    if (!/(^|\.)amazon\.(de|com|co\.uk|fr|it|es)$/.test(host)) {
-      return null;
-    }
+ try {
+  const u = new URL(link);
 
-    const match = url.pathname.match(
-      /\/(?:dp|gp\/product|gp\/aw\/d|exec\/obidos\/ASIN)\/([A-Z0-9]{10})(?:\/|$)/i
-    );
-
-    return match ? match[1].toUpperCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-
-
-async function checkAmazonLink() {
-  const link = document.getElementById("link").value.trim();
-  const status = document.getElementById("amazonStatus");
-
-  if (!link) {
-    status.textContent = "Bitte Amazon-Link eingeben.";
-    return;
-  }
-
-  let url;
-  try {
-    url = new URL(link);
-    if (url.protocol !== "https:") throw new Error();
-  } catch {
-    status.textContent = "Ungültiger Link.";
-    return;
-  }
-
-  const host = url.hostname.toLowerCase();
-
-  if (host === "amzn.eu" || host === "amzn.to") {
-    status.textContent =
-      "Kurzlink erkannt. Bitte auf Amazon öffnen und den vollständigen Produktlink kopieren.";
-    window.open(link, "_blank");
-    return;
-  }
-
-  const asin = extractAmazonASIN(link);
-
-  if (!asin) {
-    status.textContent = "Keine Amazon-Produktnummer erkannt.";
-    return;
-  }
-
-  status.textContent =
-    "Amazon-Produkt erkannt. ASIN: " + asin +
-    ". Produktname und Einkaufspreis bitte noch eingeben.";
-}
-
-
-
-const amazonButton = document.createElement("button");
-amazonButton.textContent = "Amazon-Link auslesen";
-amazonButton.onclick = checkAmazonLink;
-
-document.getElementById("link").after(amazonButton);
-
-function importAmazonText() {
-  const text = document.getElementById("amazonText").value.trim();
-
-  if (!text) {
-    alert("Bitte zuerst Produktname und Preis von Amazon einfügen.");
-    return;
-  }
-
-  const lines = text.split("\n").map(x => x.trim()).filter(Boolean);
-  const priceMatch = text.match(/(\d{1,5}(?:[.,]\d{2}))\s*€/);
-
-  if (!priceMatch) {
-    alert("Keinen Preis erkannt. Bitte Preis manuell eingeben.");
-  } else {
-    document.getElementById("cost").value =
-      priceMatch[1].replace(",", ".");
-  }
-
-  const name = lines.find(line =>
-    line.length > 8 &&
-    !line.includes("€") &&
-    !/prime|lieferung|bewertung|sterne/i.test(line)
+  const match = u.pathname.match(
+   /\/(?:dp|gp\/product|gp\/aw\/d|exec\/obidos\/ASIN)\/([A-Z0-9]{10})(?:\/|$)/i
   );
 
-  if (name) {
-    document.getElementById("name").value = name;
-  }
+  return match ? match[1].toUpperCase() : null;
+ } catch {
+  return null;
+ }
+}
 
-  alert("Produktdaten übernommen. Bitte Angaben überprüfen.");
+function checkAmazonLink() {
+ const link = $('link').value.trim();
+ const status = $('amazonStatus');
+
+ if (!link) {
+  status.textContent = 'Bitte Amazon-Link eingeben.';
+  return;
+ }
+
+ let url;
+
+ try {
+  url = new URL(link);
+  if (url.protocol !== 'https:') throw Error();
+ } catch {
+  status.textContent = 'Ungültiger Link.';
+  return;
+ }
+
+ if (['amzn.eu','amzn.to'].includes(
+  url.hostname.toLowerCase()
+ )) {
+  status.textContent =
+   'Kurzlink erkannt. Bitte auf Amazon öffnen und ' +
+   'den vollständigen Produktlink kopieren.';
+
+  window.open(link,'_blank','noopener');
+  return;
+ }
+
+ const asin = extractAmazonASIN(link);
+
+ status.textContent = asin
+  ? 'Amazon-Produkt erkannt. ASIN: ' + asin +
+    '. Produktname und Einkaufspreis bitte noch eingeben.'
+  : 'Keine Amazon-Produktnummer erkannt.';
+}
+
+function importAmazonText() {
+ const text = $('amazonText').value.trim();
+
+ if (!text) {
+  alert('Bitte zuerst Produktname und Preis von Amazon einfügen.');
+  return;
+ }
+
+ const lines = text.split('\n')
+  .map(x => x.trim())
+  .filter(Boolean);
+
+ const match = text.match(
+  /(\d{1,5}(?:[.,]\d{2}))\s*€/
+ );
+
+ if (match) {
+  $('cost').value = match[1].replace(',','.');
+ } else {
+  alert('Keinen Preis erkannt. Bitte Preis manuell eingeben.');
+ }
+
+ const name = lines.find(line =>
+  line.length > 8 &&
+  !line.includes('€') &&
+  !/prime|lieferung|bewertung|sterne/i.test(line)
+ );
+
+ if (name) {
+  $('name').value = name;
+ }
+
+ alert('Produktdaten übernommen. Bitte Angaben überprüfen.');
 }
 
 showProducts();
